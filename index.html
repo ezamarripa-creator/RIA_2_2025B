@@ -84,7 +84,7 @@
     </header>
 
     <main class="max-w-[1600px] mx-auto px-4">
-        <!-- Estadísticas principales + nuevas etiquetas de riesgo por parcial -->
+        <!-- Estadísticas principales + nuevas etiquetas con TOTAL de registros < 6 por parcial -->
         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
             <div class="glass p-5 rounded-2xl stat-card shadow-sm"><p class="text-[10px] font-bold text-stone-500 uppercase">Alumnos Únicos</p><h2 id="stat-alumnos" class="text-3xl font-black text-slate-800">0</h2></div>
             <div class="glass p-5 rounded-2xl stat-card shadow-sm"><p class="text-[10px] font-bold text-stone-500 uppercase">Registros Totales</p><h2 id="stat-registros" class="text-3xl font-black text-slate-800">0</h2></div>
@@ -92,18 +92,18 @@
             <div class="glass p-5 rounded-2xl stat-card shadow-sm"><p class="text-[10px] font-bold text-stone-500 uppercase">Promedio Gral</p><h2 id="stat-promedio" class="text-3xl font-black text-emerald-700">0.0</h2></div>
             <div class="glass p-5 rounded-2xl stat-card shadow-sm"><p class="text-[10px] font-bold text-stone-500 uppercase">📊 Parcial Activo</p><h2 id="stat-parcial-activo" class="text-2xl font-black text-amber-700">AMBOS</h2></div>
             
-            <!-- NUEVA ETIQUETA: % Materias reprobadas en Parcial 1 (Cal < 6) -->
+            <!-- NUEVA ETIQUETA: Total de registros con Cal_1 < 6 -->
             <div class="glass p-5 rounded-2xl shadow-sm border-l-4 border-red-500">
-                <p class="text-[10px] font-bold text-stone-500 uppercase flex items-center gap-1">📘 PARCIAL 1 &lt; 6</p>
-                <h2 id="stat-riesgo-p1" class="text-3xl font-black text-red-700">0%</h2>
-                <p class="text-[9px] text-stone-400 mt-1">del total de materias</p>
+                <p class="text-[10px] font-bold text-stone-500 uppercase flex items-center gap-1">📘 PARCIAL 1 (&lt;6)</p>
+                <h2 id="stat-riesgo-p1" class="text-3xl font-black text-red-700">0</h2>
+                <p class="text-[9px] text-stone-400 mt-1">registros reprobados</p>
             </div>
             
-            <!-- NUEVA ETIQUETA: % Materias reprobadas en Parcial 2 (Cal < 6) -->
+            <!-- NUEVA ETIQUETA: Total de registros con Cal_2 < 6 -->
             <div class="glass p-5 rounded-2xl shadow-sm border-l-4 border-orange-500">
-                <p class="text-[10px] font-bold text-stone-500 uppercase flex items-center gap-1">📗 PARCIAL 2 &lt; 6</p>
-                <h2 id="stat-riesgo-p2" class="text-3xl font-black text-orange-700">0%</h2>
-                <p class="text-[9px] text-stone-400 mt-1">del total de materias</p>
+                <p class="text-[10px] font-bold text-stone-500 uppercase flex items-center gap-1">📗 PARCIAL 2 (&lt;6)</p>
+                <h2 id="stat-riesgo-p2" class="text-3xl font-black text-orange-700">0</h2>
+                <p class="text-[9px] text-stone-400 mt-1">registros reprobados</p>
             </div>
         </div>
 
@@ -351,7 +351,7 @@
 
         const getParcialActive = () => document.getElementById('f-parcial').value;
         
-        // Función mejorada para actualizar estadísticas + las nuevas tarjetas de % Riesgo por parcial
+        // Función actualizada: muestra el TOTAL de registros con calificación < 6 en cada parcial
         const updateStats = (items, parcialFiltro) => {
             const uniqueAlumnos = new Set(items.map(i => i.Alumno));
             document.getElementById('stat-alumnos').innerText = uniqueAlumnos.size;
@@ -373,16 +373,13 @@
             document.getElementById('stat-promedio').innerHTML = avg.toFixed(1);
             document.getElementById('stat-parcial-activo').innerHTML = parcialText;
             
-            // --- NUEVO CÁLCULO: Porcentaje de materias con calificación < 6 en Parcial 1 (sobre el total de registros filtrados) ---
-            const totalMaterias = items.length;
+            // --- TOTAL de registros con Cal_1 < 6 (sin porcentaje, solo el número) ---
             const countP1Reprobado = items.filter(d => d.Cal1 < 6).length;
-            const percentP1 = totalMaterias === 0 ? 0 : (countP1Reprobado / totalMaterias) * 100;
-            document.getElementById('stat-riesgo-p1').innerHTML = percentP1.toFixed(1) + '%';
+            document.getElementById('stat-riesgo-p1').innerHTML = countP1Reprobado;
             
-            // Porcentaje de materias con calificación < 6 en Parcial 2
+            // --- TOTAL de registros con Cal_2 < 6 ---
             const countP2Reprobado = items.filter(d => d.Cal2 < 6).length;
-            const percentP2 = totalMaterias === 0 ? 0 : (countP2Reprobado / totalMaterias) * 100;
-            document.getElementById('stat-riesgo-p2').innerHTML = percentP2.toFixed(1) + '%';
+            document.getElementById('stat-riesgo-p2').innerHTML = countP2Reprobado;
         };
 
         const renderTable = (items) => {
