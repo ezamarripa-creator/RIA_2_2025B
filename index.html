@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+
+    <script>
+    (function() {
+        document.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            return false;
+        });
+      
+       document.addEventListener('keydown', function(e) {
+            const key = e.key.toLowerCase();
+            if ((e.ctrlKey && (key === 'u' || key === 's' || key === 'c' || key === 'i' || key === 'j')) ||
+                (e.ctrlKey && e.shiftKey && (key === 'i' || key === 'j' || key === 'c')) ||
+                e.key === 'F12') {
+                e.preventDefault();
+                return false;
+            }
+        });
+        
+        let devtoolsTriggered = false;
+        setInterval(function() {
+            if (devtoolsTriggered) return;
+            const before = new Date();
+            debugger; 
+            const after = new Date();
+            if (after - before > 100) { 
+                devtoolsTriggered = true;
+                document.body.innerHTML = '<div style="text-align:center; padding:50px; font-family:sans-serif;"><h1 style="color:#042C53;">⚠️ Acceso no autorizado</h1><p>El uso de herramientas de desarrollo no está permitido en este recurso institucional.</p><p style="font-size:14px; margin-top:30px;">🔒 COBAED · Dirección Académica</p></div>';
+            }
+        }, 2000);
+        
+        const style = document.createElement('style');
+        style.textContent = `body { user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; }`;
+        document.head.appendChild(style);
+    })();
+    </script>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SISTEMA SEMS - RIA Dashboard v7.0 | Parciales 1 y 2 (Drive Directo)</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
+        :root { --negro: #0f172a; --tierra: #78350f; --beige: #f5f5f4; }
+        body { font-family: 'Inter', sans-serif; background-color: var(--beige); color: var(--negro); }
+        .glass { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.1); }
+        .stat-card { border-left: 4px solid var(--tierra); }
+        .loading-overlay { display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.9); z-index: 999; align-items: center; justify-content: center; color: white; flex-direction: column; }
+    </style>
+</head>
+<body class="min-h-screen pb-12">
+
+    <div id="loader" class="loading-overlay font-bold">
+        <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-amber-500 mb-4"></div>
+        <span class="text-xl tracking-widest uppercase" id="loader-text">Conectando con Google Drive...</span>
+    </div>
+
+    <header class="bg-[#0f172a] text-white p-6 shadow-2xl mb-6">
+        <div class="max-w-[1600px] mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+                <h1 class="text-3xl font-extrabold tracking-tighter uppercase">Sistema SEMS <span class="text-amber-500 italic">RIA</span></h1>
+                <p class="text-[10px] tracking-[0.4em] text-stone-400">CONTROL DE CALIFICACIONES | PARCIAL 1 Y PARCIAL 2</p>
+            </div>
+            <div class="flex flex-wrap gap-2 justify-center">
+                <button onclick="loadDataFromDrive()" class="bg-amber-600 hover:bg-amber-500 px-5 py-2 rounded-lg text-xs font-bold transition-all shadow-lg flex items-center gap-2">
+                    🔄 SINCRONIZAR DRIVE (ARCHIVO COMPARTIDO)
+                </button>
+                <button onclick="exportToExcel()" class="bg-emerald-700 hover:bg-emerald-600 px-4 py-2 rounded-lg text-xs font-bold transition-all">📎 EXCEL</button>
+                <button onclick="exportToPDF()" class="bg-red-700 hover:bg-red-600 px-4 py-2 rounded-lg text-xs font-bold transition-all">📄 PDF</button>
+                <button onclick="clearDatabase()" class="bg-red-900/40 hover:bg-red-800 px-4 py-2 rounded-lg text-xs font-bold transition-all border border-red-700/50">🗑 LIMPIAR CACHÉ</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-[1600px] mx-auto px-4">
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+            <div class="glass p-5 rounded-2xl stat-card shadow-sm"><p class="text-[10px] font-bold text-stone-500 uppercase">Alumnos Únicos</p><h2 id="stat-alumnos" class="text-3xl font-black text-slate-800">0</h2></div>
+            <div class="glass p-5 rounded-2xl stat-card shadow-sm"><p class="text-[10px] font-bold text-stone-500 uppercase">Registros Totales</p><h2 id="stat-registros" class="text-3xl font-black text-slate-800">0</h2></div>
+            <div class="glass p-5 rounded-2xl stat-card shadow-sm"><p class="text-[10px] font-bold text-stone-500 uppercase">Planteles</p><h2 id="stat-planteles" class="text-3xl font-black text-slate-800">0</h2></div>
+            <div class="glass p-5 rounded-2xl stat-card shadow-sm"><p class="text-[10px] font-bold text-stone-500 uppercase">Promedio Gral</p><h2 id="stat-promedio" class="text-3xl font-black text-emerald-700">0.0</h2></div>
+            <div class="glass p-5 rounded-2xl stat-card shadow-sm"><p class="text-[10px] font-bold text-stone-500 uppercase">📊 Parcial Activo</p><h2 id="stat-parcial-activo" class="text-2xl font-black text-amber-700">AMBOS</h2></div>
+        </div>
+
+        <section class="glass rounded-2xl p-6 mb-6 shadow-sm border border-stone-200">
+            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
+                <div><label class="block text-[9px] font-bold text-stone-400 mb-1">PLANTEL</label><select id="f-plantel" onchange="applyFilters()" class="w-full bg-stone-50 border p-2 rounded-lg text-xs font-bold outline-none"></select></div>
+                <div><label class="block text-[9px] font-bold text-stone-400 mb-1">SEMESTRE</label><select id="f-semestre" onchange="applyFilters()" class="w-full bg-stone-50 border p-2 rounded-lg text-xs font-bold outline-none"></select></div>
+                <div><label class="block text-[9px] font-bold text-stone-400 mb-1">DOCENTE</label><select id="f-docente" onchange="applyFilters()" class="w-full bg-stone-50 border p-2 rounded-lg text-xs font-bold outline-none"></select></div>
+                <div><label class="block text-[9px] font-bold text-stone-400 mb-1">TURNO</label><select id="f-turno" onchange="applyFilters()" class="w-full bg-stone-50 border p-2 rounded-lg text-xs font-bold outline-none"></select></div>
+                <div><label class="block text-[9px] font-bold text-stone-400 mb-1">TIPO</label><select id="f-tipo" onchange="applyFilters()" class="w-full bg-stone-50 border p-2 rounded-lg text-xs font-bold outline-none"></select></div>
+                <div><label class="block text-[9px] font-bold text-stone-400 mb-1">GÉNERO</label><select id="f-sector" onchange="applyFilters()" class="w-full bg-stone-50 border p-2 rounded-lg text-xs font-bold outline-none"></select></div>
+                <div><label class="block text-[9px] font-bold text-stone-400 mb-1">PARCIAL</label>
+                    <select id="f-parcial" onchange="applyFilters()" class="w-full bg-stone-50 border p-2 rounded-lg text-xs font-bold outline-none">
+                        <option value="ALL">AMBOS (GENERAL)</option>
+                        <option value="P1">SOLO PARCIAL 1</option>
+                        <option value="P2">SOLO PARCIAL 2</option>
+                    </select>
+                </div>
+                <div><label class="block text-[9px] font-bold text-stone-400 mb-1">RIESGO (Prom. Final)</label>
+                    <select id="f-semaforo" onchange="applyFilters()" class="w-full bg-stone-50 border p-2 rounded-lg text-xs font-bold outline-none">
+                        <option value="ALL">TODOS</option><option value="ROJO">🔴 0-4</option><option value="AMARILLO">🟡 4.1-6</option><option value="NARANJA">🟠 6.1-8</option><option value="VERDE">🟢 +8</option>
+                    </select>
+                </div>
+            </div>
+        </section>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div class="glass p-4 rounded-2xl h-60" id="chart-genero"></div>
+            <div class="glass p-4 rounded-2xl h-60" id="chart-turno"></div>
+            <div class="glass p-4 rounded-2xl h-60" id="chart-estatus"></div>
+            <div class="glass p-4 rounded-2xl h-60" id="chart-tipo"></div>
+            <div class="glass p-4 rounded-2xl h-60 md:col-span-2" id="chart-rangos"></div>
+            <div class="glass p-4 rounded-2xl h-60 md:col-span-2" id="chart-ranking"></div>
+        </div>
+
+        <div class="glass rounded-2xl overflow-hidden shadow-sm border border-stone-200">
+            <div class="overflow-y-auto max-h-[600px]">
+                <table class="w-full text-left text-[11px]" id="mainTable">
+                    <thead class="bg-slate-900 text-white sticky top-0 z-10">
+                        <tr>
+                            <th class="p-3 text-center">#</th>
+                            <th class="p-3">PLANTEL</th>
+                            <th class="p-3 text-center">SEM.</th>
+                            <th class="p-3">TURNO</th>
+                            <th class="p-3 text-center">GP</th>
+                            <th class="p-3">ALUMNO</th>
+                            <th class="p-3">MATERIA</th>
+                            <th class="p-3 text-center">📘 Cal_1</th>
+                            <th class="p-3 text-center">📗 Cal_2</th>
+                            <th class="p-3 text-center">⭐ PROMEDIO FINAL (Materia)</th>
+                            <th class="p-3 text-center">ESTADO (Riesgo)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody" class="divide-y divide-stone-100"></tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // --- CONFIGURACIÓN ÚNICA: ID DEL ARCHIVO COMPARTIDO EN GOOGLE DRIVE ---
+        const GOOGLE_SHEET_ID = '1vTjGjeIwt1U9h1_OiMMy1IqpM-aH-jN9';
+        // URL de exportación directa como Excel (cualquier usuario con el vínculo puede acceder)
+        const GOOGLE_DRIVE_EXPORT_URL = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/export?format=xlsx`;
+        
+        const DB_NAME = 'SemsRia_DriveV7_Parciales';
+        const STORE_NAME = 'data';
+        let db, dataGlobal = [], dataFiltered = [];
+
+        // Inicializar IndexedDB
+        const initDB = () => new Promise((resolve, reject) => {
+            const req = indexedDB.open(DB_NAME, 1);
+            req.onupgradeneeded = (e) => {
+                const store = e.target.result.createObjectStore(STORE_NAME, { autoIncrement: true });
+                store.createIndex('idx_timestamp', 'timestamp', { unique: false });
+            };
+            req.onsuccess = (e) => { db = e.target.result; resolve(); };
+            req.onerror = (e) => reject(e);
+        });
+
+        // Función robusta para obtener valores por múltiples keys (insensible a mayúsculas)
+        function getValueByKeys(obj, keys) {
+            for (let key of keys) {
+                const found = Object.keys(obj).find(k => k.toLowerCase().trim() === key.toLowerCase().trim());
+                if (found && obj[found] !== undefined && obj[found] !== null && obj[found] !== '') {
+                    return obj[found];
+                }
+            }
+            return null;
+        }
+
+        // Procesar datos desde el buffer del archivo Excel
+        async function processAndSaveData(arrayBuffer, source = 'drive') {
+            const loaderText = document.getElementById('loader-text');
+            loaderText.innerText = "📊 Procesando calificaciones (Parcial 1 y Parcial 2)...";
+            
+            const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const json = XLSX.utils.sheet_to_json(firstSheet);
+            
+            console.log(`📥 Columnas detectadas en Drive:`, Object.keys(json[0] || {}));
+            console.log(`📄 Registros brutos: ${json.length}`);
+            
+            const processed = json.map((r, idx) => {
+                // Mapeo de campos principales con tolerancia a nomenclatura
+                const plantel = getValueByKeys(r, ['plantel', 'escuela', 'PLANTEL', 'Escuela', 'Plantel', 'Campus']) || 'No especificado';
+                const semestre = getValueByKeys(r, ['semestre', 'sem', 'SEMESTRE', 'Semestre', 'Grado', 'Sem']) || '-';
+                const turnoRaw = String(getValueByKeys(r, ['turno', 'TURNO', 'Turno', 'Jornada']) || '');
+                const turno = (turnoRaw.toLowerCase().includes('m') || turnoRaw === '1' || turnoRaw === 'MATUTINO' || turnoRaw === 'matutino') ? 'Matutino' : 
+                              (turnoRaw.toLowerCase().includes('v') || turnoRaw === '2' || turnoRaw === 'VESPERTINO') ? 'Vespertino' : 'Otro';
+                const grupo = getValueByKeys(r, ['grupo', 'gp', 'GRUPO', 'Grupo', 'Grupo escolar']) || '-';
+                const alumno = getValueByKeys(r, ['nombre', 'alumno', 'ALUMNO', 'Nombre', 'Alumno', 'Estudiante', 'NOMBRE']) || 'ANÓNIMO';
+                const materia = getValueByKeys(r, ['materia', 'asignatura', 'MATERIA', 'Materia', 'Asignatura']) || 'N/A';
+                const docente = getValueByKeys(r, ['nombre_doc', 'docente', 'DOCENTE', 'Docente', 'Maestro', 'Profesor']) || 'N/A';
+                
+                // Obtener calificaciones del parcial 1 y parcial 2 directamente (flexible)
+                let cal1 = parseFloat(getValueByKeys(r, ['cal_1', 'cal1', 'parcial1', 'p1', 'nota1', 'Cal_1', 'Cal1', 'Parcial1', 'P1', 'CAL1'])) || 0;
+                let cal2 = parseFloat(getValueByKeys(r, ['cal_2', 'cal2', 'parcial2', 'p2', 'nota2', 'Cal_2', 'Cal2', 'Parcial2', 'P2', 'CAL2'])) || 0;
+                
+                // Asegurar que estén en rango 0-10
+                cal1 = Math.min(10, Math.max(0, cal1));
+                cal2 = Math.min(10, Math.max(0, cal2));
+                
+                // Promedio final de la materia (ambos parciales)
+                const promFinalMateria = (cal1 + cal2) / 2;
+                
+                // Género
+                const generoRaw = String(getValueByKeys(r, ['genero', 'GENERO', 'Genero', 'Sexo', 'gender']) || '');
+                let genero = 'No especificado';
+                if (generoRaw === '1' || generoRaw.toLowerCase().startsWith('h') || generoRaw.toLowerCase() === 'hombre' || generoRaw.toLowerCase() === 'masculino') genero = 'Hombre';
+                else if (generoRaw === '2' || generoRaw.toLowerCase().startsWith('m') && generoRaw.toLowerCase() !== 'matutino' || generoRaw.toLowerCase() === 'mujer' || generoRaw.toLowerCase() === 'femenino') genero = 'Mujer';
+                else if (generoRaw !== '') genero = generoRaw.charAt(0).toUpperCase() + generoRaw.slice(1).toLowerCase();
+                
+                // Estatus y Tipo (datos comunes en sistemas)
+                const estatus = getValueByKeys(r, ['estatus', 'ESTATUS', 'Estatus', 'status']) || 'Activo';
+                const tipo = getValueByKeys(r, ['tipo_alumno', 'tipo', 'TIPO', 'Tipo', 'categoria']) || 'Regular';
+                
+                // Semaforización basada en el promedio final de la materia
+                let semaforo = '';
+                if (promFinalMateria <= 4) semaforo = 'ROJO';
+                else if (promFinalMateria <= 6) semaforo = 'AMARILLO';
+                else if (promFinalMateria <= 8) semaforo = 'NARANJA';
+                else semaforo = 'VERDE';
+                
+                return {
+                    Plantel: plantel,
+                    Semestre: semestre,
+                    Turno: turno,
+                    Grupo: grupo,
+                    Alumno: alumno,
+                    Materia: materia,
+                    Docente: docente,
+                    Cal1: cal1,
+                    Cal2: cal2,
+                    PromedioFinalMateria: promFinalMateria,
+                    Genero: genero,
+                    Estatus: estatus,
+                    Tipo: tipo,
+                    Semaforo: semaforo,
+                    timestamp: Date.now()
+                };
+            });
+            
+            console.log("✅ Registros procesados correctamente:", processed.length);
+            if (processed.length === 0) throw new Error("No se encontraron datos en el archivo compartido.");
+            
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            await store.clear();
+            for (let item of processed) {
+                store.add(item);
+            }
+            
+            return new Promise((resolve, reject) => {
+                tx.oncomplete = () => {
+                    console.log("📀 Datos guardados en IndexedDB");
+                    resolve();
+                };
+                tx.onerror = (e) => reject(e);
+            });
+        }
+
+        // Cargar datos directamente desde Google Drive usando el ID compartido (cualquier usuario con acceso)
+        async function loadDataFromDrive() {
+            const loaderDiv = document.getElementById('loader');
+            const loaderText = document.getElementById('loader-text');
+            try {
+                loaderDiv.style.display = 'flex';
+                loaderText.innerText = "🔗 Conectando con archivo compartido en Google Drive...";
+                
+                // Mostrar el ID que se está usando
+                console.log(`🌐 Solicitando archivo con ID: ${GOOGLE_SHEET_ID}`);
+                
+                const response = await fetch(GOOGLE_DRIVE_EXPORT_URL, {
+                    cache: 'no-store',
+                    headers: { 'Cache-Control': 'no-cache' }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Error HTTP ${response.status}: No se pudo acceder al archivo. Verifica que el ID sea correcto y que el archivo esté publicado o compartido con acceso de lectura.`);
+                }
+                
+                loaderText.innerText = "📥 Descargando hoja de cálculo desde Drive...";
+                const arrayBuffer = await response.arrayBuffer();
+                
+                await processAndSaveData(arrayBuffer);
+                
+                loaderText.innerText = "✅ Datos sincronizados. Actualizando vista...";
+                // Recargar la interfaz con los nuevos datos
+                await refreshDataFromDB();
+                
+                loaderDiv.style.display = 'none';
+                // Notificación sutil
+                const msg = document.createElement('div');
+                msg.className = 'fixed bottom-4 right-4 bg-emerald-700 text-white px-4 py-2 rounded-lg shadow-xl text-sm z-50 animate-pulse';
+                msg.innerText = '✅ Sincronización exitosa con archivo compartido de Drive';
+                document.body.appendChild(msg);
+                setTimeout(() => msg.remove(), 3000);
+            } catch (err) {
+                console.error("❌ Error en sincronización:", err);
+                alert("⚠️ No se pudo sincronizar con Google Drive.\nAsegúrate de que:\n- El ID del archivo es correcto.\n- El archivo está compartido con acceso de lectura para 'cualquier persona con el enlace'.\n- El formato es un archivo de Google Sheets válido.\n\nDetalle técnico: " + err.message);
+                loaderDiv.style.display = 'none';
+            }
+        }
+        
+        // Refrescar datos globales desde IndexedDB y aplicar filtros
+        async function refreshDataFromDB() {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, 'readonly');
+                const store = tx.objectStore(STORE_NAME);
+                const getAllReq = store.getAll();
+                getAllReq.onsuccess = (e) => {
+                    dataGlobal = e.target.result;
+                    if (dataGlobal && dataGlobal.length > 0) {
+                        setupFilters();
+                        applyFilters();
+                        resolve();
+                    } else {
+                        reject(new Error("No hay datos en caché"));
+                    }
+                };
+                getAllReq.onerror = (e) => reject(e);
+            });
+        }
+
+        const getParcialActive = () => document.getElementById('f-parcial').value;
+        
+        const updateStats = (items, parcialFiltro) => {
+            const uniqueAlumnos = new Set(items.map(i => i.Alumno));
+            document.getElementById('stat-alumnos').innerText = uniqueAlumnos.size;
+            document.getElementById('stat-registros').innerText = items.length;
+            document.getElementById('stat-planteles').innerText = [...new Set(items.map(i=>i.Plantel))].length;
+            
+            let avg = 0;
+            let parcialText = "";
+            if(parcialFiltro === 'P1') {
+                avg = items.reduce((acc, curr) => acc + curr.Cal1, 0) / (items.length || 1);
+                parcialText = '📘 CAL_1 (Parcial 1)';
+            } else if(parcialFiltro === 'P2') {
+                avg = items.reduce((acc, curr) => acc + curr.Cal2, 0) / (items.length || 1);
+                parcialText = '📗 CAL_2 (Parcial 2)';
+            } else {
+                avg = items.reduce((acc, curr) => acc + curr.PromedioFinalMateria, 0) / (items.length || 1);
+                parcialText = '⭐ PROMEDIO FINAL (P1+P2)';
+            }
+            document.getElementById('stat-promedio').innerHTML = avg.toFixed(1);
+            document.getElementById('stat-parcial-activo').innerHTML = parcialText;
+        };
+
+        const renderTable = (items) => {
+            const tbody = document.getElementById('tableBody');
+            if (!items.length) {
+                tbody.innerHTML = '<tr><td colspan="11" class="text-center py-10 text-stone-400">No hay registros con los filtros seleccionados</td></tr>';
+                return;
+            }
+            tbody.innerHTML = items.slice(0, 1200).map((d, i) => {
+                let cal1Show = d.Cal1.toFixed(1);
+                let cal2Show = d.Cal2.toFixed(1);
+                let finalShow = d.PromedioFinalMateria.toFixed(1);
+                let estadoColor = d.PromedioFinalMateria < 6 ? 'text-red-600 font-extrabold' : 'text-emerald-700 font-extrabold';
+                let bgRiesgo = d.Semaforo === 'ROJO' ? 'bg-red-100' : (d.Semaforo === 'AMARILLO' ? 'bg-yellow-50' : '');
+                return `
+                    <tr class="hover:bg-white border-b border-stone-100 ${bgRiesgo}">
+                        <td class="p-3 text-center border-r font-bold text-stone-400">${i+1}</td>
+                        <td class="p-3 font-bold">${escapeHtml(d.Plantel)}</td>
+                        <td class="p-3 text-center">${escapeHtml(d.Semestre)}</td>
+                        <td class="p-3 text-[10px]">${escapeHtml(d.Turno)}</td>
+                        <td class="p-3 text-center font-bold text-amber-800">${escapeHtml(d.Grupo)}</td>
+                        <td class="p-3 font-semibold">${escapeHtml(d.Alumno)}</td>
+                        <td class="p-3 text-stone-500">${escapeHtml(d.Materia)}</td>
+                        <td class="p-3 text-center font-mono font-bold ${d.Cal1 < 6 ? 'text-red-500' : 'text-blue-700'}">${cal1Show}</td>
+                        <td class="p-3 text-center font-mono font-bold ${d.Cal2 < 6 ? 'text-red-500' : 'text-blue-700'}">${cal2Show}</td>
+                        <td class="p-3 text-center font-black ${estadoColor}">${finalShow}</td>
+                        <td class="p-3 text-center">
+                            <div class="inline-block w-3 h-3 rounded-full ${d.Semaforo === 'ROJO' ? 'bg-red-500' : d.Semaforo === 'AMARILLO' ? 'bg-yellow-400' : d.Semaforo === 'NARANJA' ? 'bg-orange-500' : 'bg-emerald-500'}"></div>
+                            <span class="ml-1 text-[9px] font-bold">${d.Semaforo}</span>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        };
+        
+        // Simple escape para prevenir XSS
+        function escapeHtml(str) { return String(str).replace(/[&<>]/g, function(m){if(m === '&') return '&amp;'; if(m === '<') return '&lt;'; if(m === '>') return '&gt;'; return m;});}
+        
+        const applyFilters = () => {
+            const s = (id) => document.getElementById(id).value;
+            const parcialMode = getParcialActive();
+            
+            let baseFiltered = dataGlobal.filter(d => 
+                (s('f-plantel') === 'ALL' || d.Plantel === s('f-plantel')) &&
+                (s('f-semestre') === 'ALL' || String(d.Semestre) === s('f-semestre')) &&
+                (s('f-docente') === 'ALL' || d.Docente === s('f-docente')) &&
+                (s('f-turno') === 'ALL' || d.Turno === s('f-turno')) &&
+                (s('f-tipo') === 'ALL' || d.Tipo === s('f-tipo')) &&
+                (s('f-sector') === 'ALL' || d.Genero === s('f-sector')) &&
+                (s('f-semaforo') === 'ALL' || d.Semaforo === s('f-semaforo'))
+            );
+            
+            dataFiltered = baseFiltered;
+            renderTable(dataFiltered);
+            updateStats(dataFiltered, parcialMode);
+            renderCharts(dataFiltered, parcialMode);
+        };
+
+        const renderCharts = (items, parcialMode) => {
+            const conf = { responsive: true, margin: { t: 40, b: 20, l: 20, r: 20 } };
+            const countBy = (f) => items.reduce((a, b) => { a[b[f]] = (a[b[f]] || 0) + 1; return a; }, {});
+            
+            if(items.length === 0) {
+                ['chart-genero','chart-turno','chart-estatus','chart-tipo','chart-rangos','chart-ranking'].forEach(id => {
+                    Plotly.newPlot(id, [{x:[], y:[], type:'scatter'}], {title:'Sin datos'});
+                });
+                return;
+            }
+            
+            const generoData = countBy('Genero');
+            Plotly.newPlot('chart-genero', [{
+                values: Object.values(generoData), labels: Object.keys(generoData), type: 'pie', marker: { colors: ['#0f172a', '#78350f', '#a0a0a0'] }
+            }], { title: 'Género', ...conf });
+            
+            const turnoData = countBy('Turno');
+            Plotly.newPlot('chart-turno', [{
+                values: Object.values(turnoData), labels: Object.keys(turnoData), type: 'pie', hole: .4
+            }], { title: 'Turno', ...conf });
+            
+            const estatusData = countBy('Estatus');
+            Plotly.newPlot('chart-estatus', [{
+                x: Object.keys(estatusData), y: Object.values(estatusData), type: 'bar', marker: { color: '#94a3b8' }
+            }], { title: 'Estatus', ...conf });
+            
+            const tipoData = countBy('Tipo');
+            Plotly.newPlot('chart-tipo', [{
+                x: Object.keys(tipoData), y: Object.values(tipoData), type: 'bar', marker: { color: '#fbbf24' }
+            }], { title: 'Tipo Alumno', ...conf });
+            
+            let rankingMetric = (i) => {
+                if(parcialMode === 'P1') return i.Cal1;
+                if(parcialMode === 'P2') return i.Cal2;
+                return i.PromedioFinalMateria;
+            };
+            const plantAvg = {};
+            items.forEach(i => {
+                if (!plantAvg[i.Plantel]) plantAvg[i.Plantel] = { s: 0, c: 0 };
+                plantAvg[i.Plantel].s += rankingMetric(i);
+                plantAvg[i.Plantel].c++;
+            });
+            const ranking = Object.keys(plantAvg).map(k => ({ p: k, a: plantAvg[k].s / plantAvg[k].c })).sort((a, b) => b.a - a.a).slice(0, 8);
+            let rankTitle = parcialMode === 'P1' ? 'Top Planteles (Parcial 1)' : (parcialMode === 'P2' ? 'Top Planteles (Parcial 2)' : 'Top Planteles (Promedio Final)');
+            Plotly.newPlot('chart-ranking', [{
+                x: ranking.map(x => x.a), y: ranking.map(x => x.p), type: 'bar', orientation: 'h', marker: { color: '#065f46' }
+            }], { title: rankTitle, ...conf });
+            
+            const ranges = ['0-4', '4.1-6', '6.1-8', '8.1-10'];
+            const p1Count = [0,0,0,0];
+            const p2Count = [0,0,0,0];
+            items.forEach(item => {
+                let cal1 = item.Cal1, cal2 = item.Cal2;
+                let idx1 = cal1 <= 4 ? 0 : cal1 <= 6 ? 1 : cal1 <= 8 ? 2 : 3;
+                let idx2 = cal2 <= 4 ? 0 : cal2 <= 6 ? 1 : cal2 <= 8 ? 2 : 3;
+                p1Count[idx1]++; p2Count[idx2]++;
+            });
+            Plotly.newPlot('chart-rangos', [
+                { x: ranges, y: p1Count, name: '📘 Parcial 1', type: 'bar', marker: { color: '#3b82f6' } },
+                { x: ranges, y: p2Count, name: '📗 Parcial 2', type: 'bar', marker: { color: '#f59e0b' } }
+            ], { title: 'Distribución de Notas | Parcial 1 vs Parcial 2', barmode: 'group', ...conf });
+        };
+
+        const fillSelect = (id, vals) => {
+            const select = document.getElementById(id);
+            if(!select) return;
+            select.innerHTML = '<option value="ALL">TODOS</option>' + vals.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+        };
+
+        const setupFilters = () => {
+            if (!dataGlobal.length) return;
+            const getU = (f) => [...new Set(dataGlobal.map(d => d[f]))].sort((a,b)=>String(a).localeCompare(String(b)));
+            fillSelect('f-plantel', getU('Plantel'));
+            fillSelect('f-semestre', getU('Semestre'));
+            fillSelect('f-docente', getU('Docente'));
+            fillSelect('f-turno', getU('Turno'));
+            fillSelect('f-tipo', getU('Tipo'));
+            fillSelect('f-sector', getU('Genero'));
+        };
+
+        function exportToExcel() {
+            if(!dataFiltered.length) return alert("No hay datos para exportar");
+            const exportData = dataFiltered.map(d => ({
+                Plantel: d.Plantel, Semestre: d.Semestre, Turno: d.Turno, Grupo: d.Grupo, Alumno: d.Alumno,
+                Materia: d.Materia, Docente: d.Docente, Cal_1: d.Cal1, Cal_2: d.Cal2, Promedio_Final_Materia: d.PromedioFinalMateria,
+                Estatus_Riesgo: d.Semaforo, Genero: d.Genero
+            }));
+            const ws = XLSX.utils.json_to_sheet(exportData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Reporte_Parciales_Drive");
+            XLSX.writeFile(wb, `Reporte_RIA_${GOOGLE_SHEET_ID}.xlsx`);
+        }
+
+        function exportToPDF() {
+            if(!dataFiltered.length) return alert("Sin datos");
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF('l', 'mm', 'a4');
+            doc.text(`REPORTE RIA - SISTEMA SEMS (Archivo Drive ID: ${GOOGLE_SHEET_ID})`, 14, 15);
+            doc.autoTable({
+                head: [['Plantel','Sem','Turno','Alumno','Materia','Cal_1','Cal_2','PromFinal']],
+                body: dataFiltered.slice(0, 180).map(d => [d.Plantel, d.Semestre, d.Turno, d.Alumno, d.Materia, d.Cal1.toFixed(1), d.Cal2.toFixed(1), d.PromedioFinalMateria.toFixed(1)]),
+                startY: 20, styles: { fontSize: 7 }
+            });
+            doc.save("Reporte_RIA_Drive.pdf");
+        }
+
+        const clearDatabase = () => {
+            if (confirm("⚠️ Eliminar caché local y recargar desde el archivo compartido en Drive?")) {
+                indexedDB.deleteDatabase(DB_NAME);
+                location.reload();
+            }
+        };
+
+        // Inicialización: cargar datos desde IndexedDB o si no hay, sincronizar automáticamente
+        window.onload = async () => {
+            await initDB();
+            const tx = db.transaction(STORE_NAME, 'readonly');
+            const store = tx.objectStore(STORE_NAME);
+            const getAllReq = store.getAll();
+            getAllReq.onsuccess = (e) => {
+                const cached = e.target.result;
+                if (cached && cached.length > 0) {
+                    console.log(`📀 Cargando caché local: ${cached.length} registros`);
+                    dataGlobal = cached;
+                    setupFilters();
+                    applyFilters();
+                } else {
+                    console.log("🔄 Sin caché local, sincronizando con Google Drive...");
+                    loadDataFromDrive();
+                }
+            };
+            getAllReq.onerror = () => loadDataFromDrive();
+        };
+    </script>
+</body>
+</html>
