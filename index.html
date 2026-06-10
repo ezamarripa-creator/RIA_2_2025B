@@ -67,7 +67,7 @@
         <div class="max-w-[1600px] mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
             <div>
                 <h1 class="text-3xl font-extrabold tracking-tighter uppercase">Sistema SEMS <span class="text-amber-500 italic">RIA</span></h1>
-                <p class="text-[10px] tracking-[0.4em] text-stone-400">CONTROL DE CALIFICACIONES | PARCIAL 1 Y PARCIAL 2</p>
+                <p class="text-[10px] tracking-[0.4em] text-stone-400">CONTROL DE CALIFICACIONES | PARCIAL 1 Y PARCIAL 2 -- SEMESTRE 2026B</p>
             </div>
             <div class="flex flex-wrap gap-2 justify-center">
                 <button onclick="loadDataFromDrive()" class="bg-amber-600 hover:bg-amber-500 px-5 py-2 rounded-lg text-xs font-bold transition-all shadow-lg flex items-center gap-2">
@@ -89,12 +89,14 @@
             <div class="glass p-5 rounded-2xl stat-card shadow-sm"><p class="text-[10px] font-bold text-stone-500 uppercase">Promedio Gral</p><h2 id="stat-promedio" class="text-3xl font-black text-emerald-700">0.0</h2></div>
             <div class="glass p-5 rounded-2xl stat-card shadow-sm"><p class="text-[10px] font-bold text-stone-500 uppercase">📊 Parcial Activo</p><h2 id="stat-parcial-activo" class="text-2xl font-black text-amber-700">AMBOS</h2></div>
             
+            <!-- NUEVA ETIQUETA: % y total de registros con Cal_1 < 6 -->
             <div class="glass p-5 rounded-2xl shadow-sm border-l-4 border-red-500">
                 <p class="text-[10px] font-bold text-stone-500 uppercase flex items-center gap-1">📘 PARCIAL 1 (&lt;6)</p>
                 <h2 id="stat-riesgo-p1" class="text-3xl font-black text-red-700">0%</h2>
                 <p id="stat-riesgo-p1-abs" class="text-[11px] font-semibold text-red-600 mt-1">0 registros</p>
             </div>
             
+            <!-- NUEVA ETIQUETA: % y total de registros con Cal_2 < 6 -->
             <div class="glass p-5 rounded-2xl shadow-sm border-l-4 border-orange-500">
                 <p class="text-[10px] font-bold text-stone-500 uppercase flex items-center gap-1">📗 PARCIAL 2 (&lt;6)</p>
                 <h2 id="stat-riesgo-p2" class="text-3xl font-black text-orange-700">0%</h2>
@@ -159,16 +161,14 @@
     </main>
 
     <script>
-        // CONFIGURACIÓN: ID DEL ARCHIVO COMPARTIDO EN GOOGLE DRIVE
-        const GOOGLE_SHEET_ID = '1Yb_h-pXrG7ocTjRKX1eI51OdWVmbOAE-';
+        // --- CONFIGURACIÓN ÚNICA: ID DEL ARCHIVO COMPARTIDO EN GOOGLE DRIVE ---
+        const GOOGLE_SHEET_ID = '1vTjGjeIwt1U9h1_OiMMy1IqpM-aH-jN9';
+        // URL de exportación directa como Excel (cualquier usuario con el vínculo puede acceder)
         const GOOGLE_DRIVE_EXPORT_URL = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/export?format=xlsx`;
         
         const DB_NAME = 'SemsRia_DriveV7_Parciales';
         const STORE_NAME = 'data';
-        let db = null;
-        let dataGlobal = [];
-        let dataFiltered = [];
-        let dbReady = false;
+        let db, dataGlobal = [], dataFiltered = [];
 
         // Inicializar IndexedDB
         const initDB = () => new Promise((resolve, reject) => {
@@ -177,14 +177,11 @@
                 const store = e.target.result.createObjectStore(STORE_NAME, { autoIncrement: true });
                 store.createIndex('idx_timestamp', 'timestamp', { unique: false });
             };
-            req.onsuccess = (e) => { 
-                db = e.target.result; 
-                dbReady = true;
-                resolve(); 
-            };
+            req.onsuccess = (e) => { db = e.target.result; resolve(); };
             req.onerror = (e) => reject(e);
         });
 
+        // Función robusta para obtener valores por múltiples keys (insensible a mayúsculas)
         function getValueByKeys(obj, keys) {
             for (let key of keys) {
                 const found = Object.keys(obj).find(k => k.toLowerCase().trim() === key.toLowerCase().trim());
@@ -195,7 +192,8 @@
             return null;
         }
 
-        async function processAndSaveData(arrayBuffer) {
+        // Procesar datos desde el buffer del archivo Excel
+        async function processAndSaveData(arrayBuffer, source = 'drive') {
             const loaderText = document.getElementById('loader-text');
             loaderText.innerText = "📊 Procesando calificaciones (Parcial 1 y Parcial 2)...";
             
@@ -203,10 +201,11 @@
             const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
             const json = XLSX.utils.sheet_to_json(firstSheet);
             
-            console.log(`📥 Columnas detectadas:`, Object.keys(json[0] || {}));
+            console.log(`📥 Columnas detectadas en Drive:`, Object.keys(json[0] || {}));
             console.log(`📄 Registros brutos: ${json.length}`);
             
             const processed = json.map((r, idx) => {
+                // Mapeo de campos principales con tolerancia a nomenclatura
                 const plantel = getValueByKeys(r, ['plantel', 'escuela', 'PLANTEL', 'Escuela', 'Plantel', 'Campus']) || 'No especificado';
                 const semestre = getValueByKeys(r, ['semestre', 'sem', 'SEMESTRE', 'Semestre', 'Grado', 'Sem']) || '-';
                 const turnoRaw = String(getValueByKeys(r, ['turno', 'TURNO', 'Turno', 'Jornada']) || '');
@@ -217,23 +216,29 @@
                 const materia = getValueByKeys(r, ['materia', 'asignatura', 'MATERIA', 'Materia', 'Asignatura']) || 'N/A';
                 const docente = getValueByKeys(r, ['nombre_doc', 'docente', 'DOCENTE', 'Docente', 'Maestro', 'Profesor']) || 'N/A';
                 
+                // Obtener calificaciones del parcial 1 y parcial 2 directamente (flexible)
                 let cal1 = parseFloat(getValueByKeys(r, ['cal_1', 'cal1', 'parcial1', 'p1', 'nota1', 'Cal_1', 'Cal1', 'Parcial1', 'P1', 'CAL1'])) || 0;
                 let cal2 = parseFloat(getValueByKeys(r, ['cal_2', 'cal2', 'parcial2', 'p2', 'nota2', 'Cal_2', 'Cal2', 'Parcial2', 'P2', 'CAL2'])) || 0;
                 
+                // Asegurar que estén en rango 0-10
                 cal1 = Math.min(10, Math.max(0, cal1));
                 cal2 = Math.min(10, Math.max(0, cal2));
                 
+                // Promedio final de la materia (ambos parciales)
                 const promFinalMateria = (cal1 + cal2) / 2;
                 
+                // Género
                 const generoRaw = String(getValueByKeys(r, ['genero', 'GENERO', 'Genero', 'Sexo', 'gender']) || '');
                 let genero = 'No especificado';
                 if (generoRaw === '1' || generoRaw.toLowerCase().startsWith('h') || generoRaw.toLowerCase() === 'hombre' || generoRaw.toLowerCase() === 'masculino') genero = 'Hombre';
-                else if (generoRaw === '2' || (generoRaw.toLowerCase().startsWith('m') && generoRaw.toLowerCase() !== 'matutino') || generoRaw.toLowerCase() === 'mujer' || generoRaw.toLowerCase() === 'femenino') genero = 'Mujer';
+                else if (generoRaw === '2' || generoRaw.toLowerCase().startsWith('m') && generoRaw.toLowerCase() !== 'matutino' || generoRaw.toLowerCase() === 'mujer' || generoRaw.toLowerCase() === 'femenino') genero = 'Mujer';
                 else if (generoRaw !== '') genero = generoRaw.charAt(0).toUpperCase() + generoRaw.slice(1).toLowerCase();
                 
+                // Estatus y Tipo (datos comunes en sistemas)
                 const estatus = getValueByKeys(r, ['estatus', 'ESTATUS', 'Estatus', 'status']) || 'Activo';
                 const tipo = getValueByKeys(r, ['tipo_alumno', 'tipo', 'TIPO', 'Tipo', 'categoria']) || 'Regular';
                 
+                // Semaforización basada en el promedio final de la materia
                 let semaforo = '';
                 if (promFinalMateria <= 4) semaforo = 'ROJO';
                 else if (promFinalMateria <= 6) semaforo = 'AMARILLO';
@@ -259,12 +264,8 @@
                 };
             });
             
-            console.log("✅ Registros procesados:", processed.length);
-            if (processed.length === 0) throw new Error("No se encontraron datos en el archivo.");
-            
-            if (!db || !dbReady) {
-                throw new Error("Base de datos no inicializada");
-            }
+            console.log("✅ Registros procesados correctamente:", processed.length);
+            if (processed.length === 0) throw new Error("No se encontraron datos en el archivo compartido.");
             
             const tx = db.transaction(STORE_NAME, 'readwrite');
             const store = tx.objectStore(STORE_NAME);
@@ -282,6 +283,7 @@
             });
         }
 
+        // Cargar datos directamente desde Google Drive usando el ID compartido (cualquier usuario con acceso)
         async function loadDataFromDrive() {
             const loaderDiv = document.getElementById('loader');
             const loaderText = document.getElementById('loader-text');
@@ -289,50 +291,41 @@
                 loaderDiv.style.display = 'flex';
                 loaderText.innerText = "🔗 Conectando con archivo compartido en Google Drive...";
                 
-                // Verificar que DB esté lista
-                if (!db || !dbReady) {
-                    await initDB();
-                }
+                console.log(`🌐 Solicitando archivo con ID: ${GOOGLE_SHEET_ID}`);
                 
-                const url = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/export?format=xlsx&gid=475379327`;
-                console.log(`🌐 Solicitando: ${url}`);
-                
-                const response = await fetch(url, {
+                const response = await fetch(GOOGLE_DRIVE_EXPORT_URL, {
                     cache: 'no-store',
                     headers: { 'Cache-Control': 'no-cache' }
                 });
                 
                 if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: No se pudo acceder al archivo.`);
+                    throw new Error(`Error HTTP ${response.status}: No se pudo acceder al archivo. Verifica que el ID sea correcto y que el archivo esté publicado o compartido con acceso de lectura.`);
                 }
                 
-                loaderText.innerText = "📥 Descargando hoja de cálculo...";
+                loaderText.innerText = "📥 Descargando hoja de cálculo desde Drive...";
                 const arrayBuffer = await response.arrayBuffer();
                 
                 await processAndSaveData(arrayBuffer);
                 
-                loaderText.innerText = "✅ Actualizando vista...";
+                loaderText.innerText = "✅ Datos sincronizados. Actualizando vista...";
                 await refreshDataFromDB();
                 
                 loaderDiv.style.display = 'none';
                 const msg = document.createElement('div');
                 msg.className = 'fixed bottom-4 right-4 bg-emerald-700 text-white px-4 py-2 rounded-lg shadow-xl text-sm z-50 animate-pulse';
-                msg.innerText = '✅ Sincronización exitosa con Drive';
+                msg.innerText = '✅ Sincronización exitosa con archivo compartido de Drive';
                 document.body.appendChild(msg);
                 setTimeout(() => msg.remove(), 3000);
             } catch (err) {
-                console.error("❌ Error:", err);
-                alert("⚠️ No se pudo sincronizar con Google Drive.\n\nVerifica que el archivo esté compartido como 'Cualquier persona con el enlace puede ver'.\n\nDetalle: " + err.message);
+                console.error("❌ Error en sincronización:", err);
+                alert("⚠️ No se pudo sincronizar con Google Drive.\nAsegúrate de que:\n- El ID del archivo es correcto.\n- El archivo está compartido con acceso de lectura para 'cualquier persona con el enlace'.\n- El formato es un archivo de Google Sheets válido.\n\nDetalle técnico: " + err.message);
                 loaderDiv.style.display = 'none';
             }
         }
         
+        // Refrescar datos globales desde IndexedDB y aplicar filtros
         async function refreshDataFromDB() {
             return new Promise((resolve, reject) => {
-                if (!db || !dbReady) {
-                    reject(new Error("DB no lista"));
-                    return;
-                }
                 const tx = db.transaction(STORE_NAME, 'readonly');
                 const store = tx.objectStore(STORE_NAME);
                 const getAllReq = store.getAll();
@@ -352,6 +345,7 @@
 
         const getParcialActive = () => document.getElementById('f-parcial').value;
         
+        // Función actualizada: muestra % Y valor absoluto para cada parcial
         const updateStats = (items, parcialFiltro) => {
             const uniqueAlumnos = new Set(items.map(i => i.Alumno));
             document.getElementById('stat-alumnos').innerText = uniqueAlumnos.size;
@@ -373,12 +367,14 @@
             document.getElementById('stat-promedio').innerHTML = avg.toFixed(1);
             document.getElementById('stat-parcial-activo').innerHTML = parcialText;
             
+            // --- Parcial 1: porcentaje y valor absoluto de registros con Cal_1 < 6 ---
             const totalMaterias = items.length;
             const countP1Reprobado = items.filter(d => d.Cal1 < 6).length;
             const percentP1 = totalMaterias === 0 ? 0 : (countP1Reprobado / totalMaterias) * 100;
             document.getElementById('stat-riesgo-p1').innerHTML = percentP1.toFixed(1) + '%';
             document.getElementById('stat-riesgo-p1-abs').innerHTML = `${countP1Reprobado} registros`;
             
+            // --- Parcial 2: porcentaje y valor absoluto de registros con Cal_2 < 6 ---
             const countP2Reprobado = items.filter(d => d.Cal2 < 6).length;
             const percentP2 = totalMaterias === 0 ? 0 : (countP2Reprobado / totalMaterias) * 100;
             document.getElementById('stat-riesgo-p2').innerHTML = percentP2.toFixed(1) + '%';
@@ -422,6 +418,7 @@
         
         const applyFilters = () => {
             const s = (id) => document.getElementById(id).value;
+            const parcialMode = getParcialActive();
             
             let baseFiltered = dataGlobal.filter(d => 
                 (s('f-plantel') === 'ALL' || d.Plantel === s('f-plantel')) &&
@@ -435,8 +432,8 @@
             
             dataFiltered = baseFiltered;
             renderTable(dataFiltered);
-            updateStats(dataFiltered, getParcialActive());
-            renderCharts(dataFiltered, getParcialActive());
+            updateStats(dataFiltered, parcialMode);
+            renderCharts(dataFiltered, parcialMode);
         };
 
         const renderCharts = (items, parcialMode) => {
@@ -546,35 +543,30 @@
         }
 
         const clearDatabase = () => {
-            if (confirm("⚠️ Eliminar caché local y recargar?")) {
+            if (confirm("⚠️ Eliminar caché local y recargar desde el archivo compartido en Drive?")) {
                 indexedDB.deleteDatabase(DB_NAME);
                 location.reload();
             }
         };
 
         window.onload = async () => {
-            try {
-                await initDB();
-                const tx = db.transaction(STORE_NAME, 'readonly');
-                const store = tx.objectStore(STORE_NAME);
-                const getAllReq = store.getAll();
-                getAllReq.onsuccess = (e) => {
-                    const cached = e.target.result;
-                    if (cached && cached.length > 0) {
-                        console.log(`📀 Cargando caché local: ${cached.length} registros`);
-                        dataGlobal = cached;
-                        setupFilters();
-                        applyFilters();
-                    } else {
-                        console.log("🔄 Sin caché local, sincronizando con Google Drive...");
-                        loadDataFromDrive();
-                    }
-                };
-                getAllReq.onerror = () => loadDataFromDrive();
-            } catch (err) {
-                console.error("Error inicializando DB:", err);
-                loadDataFromDrive();
-            }
+            await initDB();
+            const tx = db.transaction(STORE_NAME, 'readonly');
+            const store = tx.objectStore(STORE_NAME);
+            const getAllReq = store.getAll();
+            getAllReq.onsuccess = (e) => {
+                const cached = e.target.result;
+                if (cached && cached.length > 0) {
+                    console.log(`📀 Cargando caché local: ${cached.length} registros`);
+                    dataGlobal = cached;
+                    setupFilters();
+                    applyFilters();
+                } else {
+                    console.log("🔄 Sin caché local, sincronizando con Google Drive...");
+                    loadDataFromDrive();
+                }
+            };
+            getAllReq.onerror = () => loadDataFromDrive();
         };
     </script>
 </body>
